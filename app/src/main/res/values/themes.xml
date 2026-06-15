@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.AIPhoneAgent" parent="android:Theme.Material.Light.NoActionBar" />
+    <string name="accessibility_service_description">AI 手机助手需要无障碍服务权限以辅助控制手机，包括点击、滑动、输入文本、截屏及获取界面信息等操作。所有数据仅在本地处理。</string>
+</resources>
