@@ -8,6 +8,7 @@ import com.example.smartphoneagent.llm.LlmAdapter
 import com.example.smartphoneagent.llm.ModelProvider
 import com.example.smartphoneagent.plugin.ActionExecutor
 import com.example.smartphoneagent.plugin.PluginManager
+import android.util.Log
 import com.google.gson.JsonParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,6 +29,10 @@ data class ActionBlock(
 )
 
 class ChatViewModel(application: Application) : AndroidViewModel(application) {
+
+    companion object {
+        private const val TAG = "ChatViewModel"
+    }
 
     private val prefs = PreferencesManager(application)
     private val actionExecutor = ActionExecutor(application)
@@ -193,12 +198,9 @@ ${actionList.joinToString("\n")}
 
     private fun extractActions(text: String): List<ActionBlock> {
         val actions = mutableListOf<ActionBlock>()
-        val jsonPattern = Regex("""\{[\s\S]*?"action"\s*:\s*"[^"]+"[\s\S]*?\}""")
-        val matches = jsonPattern.findAll(text)
-        for (match in matches) {
+        val jsonBlocks = extractJsonBlocks(text)
+        for (json in jsonBlocks) {
             try {
-                val json = match.value.trim()
-                if (json.count { it == '{' } != json.count { it == '}' }) continue
                 val obj = JsonParser.parseString(json).asJsonObject
                 val action = obj.get("action")?.asString ?: continue
                 val paramsObj = obj.getAsJsonObject("params")
@@ -209,16 +211,56 @@ ${actionList.joinToString("\n")}
                     }
                 }
                 actions.add(ActionBlock(action, params))
-            } catch (_: Exception) {
-                continue
+            } catch (e: Exception) {
+                Log.w(TAG, "JSON 解析失败: $json", e)
             }
         }
         return actions
     }
 
+    private fun extractJsonBlocks(text: String): List<String> {
+        val blocks = mutableListOf<String>()
+        var i = 0
+        while (i < text.length) {
+            val start = text.indexOf('{', i)
+            if (start == -1) break
+            var depth = 0
+            var j = start
+            var inString = false
+            var escape = false
+            while (j < text.length) {
+                val c = text[j]
+                if (escape) {
+                    escape = false
+                } else if (c == '\\') {
+                    escape = true
+                } else if (c == '"') {
+                    inString = !inString
+                } else if (!inString) {
+                    if (c == '{') depth++
+                    else if (c == '}') {
+                        depth--
+                        if (depth == 0) {
+                            val json = text.substring(start, j + 1).trim()
+                            if (json.contains("\"action\"")) {
+                                blocks.add(json)
+                            }
+                            i = j + 1
+                            break
+                        }
+                    }
+                }
+                j++
+            }
+            if (j >= text.length) break
+        }
+        return blocks
+    }
+
     private fun stripJsonFromReply(reply: String): String {
-        val jsonPattern = Regex("""\{[\s\S]*?"action"\s*:\s*"[^"]+"[\s\S]*?\}""")
-        return jsonPattern.replace(reply, "").trim()
+        return extractJsonBlocks(reply)
+            .fold(reply) { acc, block -> acc.replace(block, "") }
+            .trim()
     }
 
     private fun buildMessages(
